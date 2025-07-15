@@ -24,6 +24,7 @@ export default function MemoApp() {
   const [newContent, setNewContent] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState("all")
+  const [isSummarizing, setIsSummarizing] = useState(false)
 
   // ローカルストレージからメモを読み込み
   useEffect(() => {
@@ -42,6 +43,35 @@ export default function MemoApp() {
   useEffect(() => {
     localStorage.setItem("memos", JSON.stringify(memos))
   }, [memos])
+
+  // AIで要約
+  const handleSummarize = async () => {
+    if (!newContent.trim()) {
+      return
+    }
+    setIsSummarizing(true)
+    try {
+      const response = await fetch("/api/summarize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ content: newContent }),
+      })
+
+      if (!response.ok) {
+        throw new Error("要約に失敗しました。")
+      }
+
+      const data = await response.json()
+      setNewContent(data.summary)
+    } catch (error) {
+      console.error(error)
+      // ここでユーザーにエラーを通知することもできます（例: SonnerやToastを使用）
+    } finally {
+      setIsSummarizing(false)
+    }
+  }
 
   // 新しいメモを追加
   const addMemo = () => {
@@ -117,6 +147,14 @@ export default function MemoApp() {
               onChange={(e) => setNewContent(e.target.value)}
               rows={4}
             />
+            <Button
+              onClick={handleSummarize}
+              disabled={isSummarizing || !newContent.trim()}
+              variant="outline"
+              className="w-full"
+            >
+              {isSummarizing ? "要約中です..." : "✨ AIで内容を要約する"}
+            </Button>
             <Button onClick={addMemo} className="w-full">
               <Plus className="w-4 h-4 mr-2" />
               メモを追加
