@@ -25,6 +25,7 @@ export default function MemoApp() {
   const [searchQuery, setSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState("all")
   const [isSummarizing, setIsSummarizing] = useState(false)
+  const [isSummarizingAll, setIsSummarizingAll] = useState(false)
 
   // ローカルストレージからメモを読み込み
   useEffect(() => {
@@ -56,7 +57,7 @@ export default function MemoApp() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ content: newContent }),
+        body: JSON.stringify({ text: newContent }),
       })
 
       if (!response.ok) {
@@ -70,6 +71,39 @@ export default function MemoApp() {
       // ここでユーザーにエラーを通知することもできます（例: SonnerやToastを使用）
     } finally {
       setIsSummarizing(false)
+    }
+  }
+
+  // すべてのメモを要約
+  const handleSummarizeAll = async () => {
+    const allText = memos
+      .map((memo) => `${memo.title}\n${memo.content}`)
+      .join("\n\n---\n\n")
+    if (!allText.trim()) {
+      alert("要約するメモがありません。")
+      return
+    }
+    setIsSummarizingAll(true)
+    try {
+      const response = await fetch("/api/summarize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text: allText }),
+      })
+
+      if (!response.ok) {
+        throw new Error("要約に失敗しました。")
+      }
+
+      const data = await response.json()
+      alert(`すべてのメモの要約:\n\n${data.summary}`)
+    } catch (error) {
+      console.error(error)
+      alert("エラーが発生しました。詳細はコンソールを確認してください。")
+    } finally {
+      setIsSummarizingAll(false)
     }
   }
 
@@ -173,6 +207,15 @@ export default function MemoApp() {
               className="pl-10"
             />
           </div>
+
+          <Button
+            onClick={handleSummarizeAll}
+            disabled={isSummarizingAll || memos.length === 0}
+            variant="secondary"
+            className="w-full"
+          >
+            {isSummarizingAll ? "要約中です..." : `📚 すべてのメモ (${memos.length}件) を要約する`}
+          </Button>
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="grid w-full grid-cols-2">
