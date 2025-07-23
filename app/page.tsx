@@ -1,305 +1,233 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useTransition } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Star, Plus, Search, Trash2 } from "lucide-react"
+import { Label } from "@/components/ui/label"
+import { Loader2, Sparkles, FileText, Copy, Check, Globe } from "lucide-react"
+import { summarizeMemo } from "../actions/summarize"
+import Image from "next/image"
 
-interface Memo {
-  id: string
-  title: string
-  content: string
-  favorite: boolean
-  createdAt: Date
-  updatedAt: Date
-}
+export default function MemoSummarizer() {
+  const [memo, setMemo] = useState("")
+  const [summary, setSummary] = useState("")
+  const [error, setError] = useState("")
+  const [copied, setCopied] = useState(false)
+  const [isPending, startTransition] = useTransition()
 
-export default function MemoApp() {
-  const [memos, setMemos] = useState<Memo[]>([])
-  const [newTitle, setNewTitle] = useState("")
-  const [newContent, setNewContent] = useState("")
-  const [searchQuery, setSearchQuery] = useState("")
-  const [activeTab, setActiveTab] = useState("all")
-  const [isSummarizing, setIsSummarizing] = useState(false)
-  const [isSummarizingAll, setIsSummarizingAll] = useState(false)
-
-  // ローカルストレージからメモを読み込み
-  useEffect(() => {
-    const savedMemos = localStorage.getItem("memos")
-    if (savedMemos) {
-      const parsedMemos = JSON.parse(savedMemos).map((memo: any) => ({
-        ...memo,
-        createdAt: new Date(memo.createdAt),
-        updatedAt: new Date(memo.updatedAt),
-      }))
-      setMemos(parsedMemos)
-    }
-  }, [])
-
-  // メモをローカルストレージに保存
-  useEffect(() => {
-    localStorage.setItem("memos", JSON.stringify(memos))
-  }, [memos])
-
-  // AIで要約
-  const handleSummarize = async () => {
-    if (!newContent.trim()) {
+  const handleSummarize = () => {
+    if (!memo.trim()) {
+      setError("メモの内容を入力してください")
       return
     }
-    setIsSummarizing(true)
-    try {
-      const response = await fetch("/api/summarize", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ text: newContent }),
-      })
 
-      if (!response.ok) {
-        throw new Error("要約に失敗しました。")
+    setError("")
+    setSummary("")
+
+    startTransition(async () => {
+      const result = await summarizeMemo(memo)
+
+      if (result.success) {
+        setSummary(result.summary || "")
+      } else {
+        setError(result.error || "要約の生成に失敗しました")
       }
+    })
+  }
 
-      const data = await response.json()
-      setNewContent(data.summary)
-    } catch (error) {
-      console.error(error)
-      // ここでユーザーにエラーを通知することもできます（例: SonnerやToastを使用）
-    } finally {
-      setIsSummarizing(false)
+  const handleCopy = async () => {
+    if (summary) {
+      await navigator.clipboard.writeText(summary)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
     }
   }
 
-  // すべてのメモを要約
-  const handleSummarizeAll = async () => {
-    const allText = memos
-      .map((memo) => `${memo.title}\n${memo.content}`)
-      .join("\n\n---\n\n")
-    if (!allText.trim()) {
-      alert("要約するメモがありません。")
-      return
-    }
-    setIsSummarizingAll(true)
-    try {
-      const response = await fetch("/api/summarize", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ text: allText }),
-      })
-
-      if (!response.ok) {
-        throw new Error("要約に失敗しました。")
-      }
-
-      const data = await response.json()
-      alert(`すべてのメモの要約:\n\n${data.summary}`)
-    } catch (error) {
-      console.error(error)
-      alert("エラーが発生しました。詳細はコンソールを確認してください。")
-    } finally {
-      setIsSummarizingAll(false)
-    }
+  const handleClear = () => {
+    setMemo("")
+    setSummary("")
+    setError("")
   }
-
-  // 新しいメモを追加
-  const addMemo = () => {
-    if (newTitle.trim() || newContent.trim()) {
-      const newMemo: Memo = {
-        id: Date.now().toString(),
-        title: newTitle.trim() || "無題のメモ",
-        content: newContent.trim(),
-        favorite: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
-      setMemos((prev) => [newMemo, ...prev])
-      setNewTitle("")
-      setNewContent("")
-    }
-  }
-
-  // メモを削除
-  const deleteMemo = (id: string) => {
-    setMemos((prev) => prev.filter((memo) => memo.id !== id))
-  }
-
-  // お気に入りの切り替え
-  const toggleFavorite = (id: string) => {
-    setMemos((prev) =>
-      prev.map((memo) => (memo.id === id ? { ...memo, favorite: !memo.favorite, updatedAt: new Date() } : memo)),
-    )
-  }
-
-  // メモをフィルタリング
-  const filteredMemos = memos.filter((memo) => {
-    const matchesSearch =
-      memo.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      memo.content.toLowerCase().includes(searchQuery.toLowerCase())
-
-    if (activeTab === "favorites") {
-      return matchesSearch && memo.favorite
-    }
-    return matchesSearch
-  })
-
-  // メモをソート（お気に入りを上に、その後は更新日時順）
-  const sortedMemos = filteredMemos.sort((a, b) => {
-    if (a.favorite && !b.favorite) return -1
-    if (!a.favorite && b.favorite) return 1
-    return b.updatedAt.getTime() - a.updatedAt.getTime()
-  })
-
-  const favoriteCount = memos.filter((memo) => memo.favorite).length
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">📝 Memo</h1>
-          <p className="text-gray-600">お気に入り機能付きのシンプルなメモアプリ</p>
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 p-4">
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* 世界地図ヘッダー */}
+        <div className="relative w-full h-[200px] md:h-[300px] rounded-xl overflow-hidden shadow-lg mb-8 border border-purple-200 bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600">
+          <Image
+            src="/images/world-map.png"
+            alt="世界地図"
+            fill
+            priority
+            className="object-cover"
+            onError={(e) => {
+              // フォールバック用のプレースホルダー画像
+              e.currentTarget.src = "/placeholder.svg?height=300&width=800&text=World+Map"
+            }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-purple-900/40 flex items-end p-6">
+            <div className="flex items-center gap-3 text-white">
+              <Globe className="w-8 h-8 drop-shadow-lg" />
+              <div>
+                <h2 className="text-2xl font-bold drop-shadow-lg">グローバルメモ要約</h2>
+                <p className="text-purple-100 text-sm drop-shadow-md">世界中どこからでもアクセス可能</p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* 新しいメモの作成 */}
-        <Card className="mb-6">
+        <div className="text-center space-y-2">
+          <h1 className="text-3xl font-bold text-gray-900 flex items-center justify-center gap-2">
+            <FileText className="w-8 h-8 text-purple-600" />
+            Claude AI メモ要約
+          </h1>
+          <p className="text-gray-600">メモの内容を入力すると、Claude AIが自動的に要約を生成します</p>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          {/* メモ入力エリア */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                メモ入力
+              </CardTitle>
+              <CardDescription>要約したいメモの内容を入力してください</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="memo">メモ内容</Label>
+                <Textarea
+                  id="memo"
+                  placeholder="ここにメモの内容を入力してください..."
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value)}
+                  className="min-h-[200px] resize-none"
+                />
+                <div className="text-sm text-gray-500">{memo.length} 文字</div>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleSummarize}
+                  disabled={isPending || !memo.trim()}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700"
+                >
+                  {isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      要約中...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Claude AIで要約
+                    </>
+                  )}
+                </Button>
+                <Button variant="outline" onClick={handleClear} disabled={isPending}>
+                  クリア
+                </Button>
+              </div>
+
+              {error && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                  <p className="text-sm text-red-600">{error}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 要約結果エリア */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5" />
+                Claude AI要約結果
+              </CardTitle>
+              <CardDescription>生成された要約が表示されます</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isPending ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center space-y-2">
+                    <Loader2 className="w-8 h-8 animate-spin mx-auto text-purple-600" />
+                    <p className="text-sm text-gray-500">Claude AIが要約を生成中...</p>
+                  </div>
+                </div>
+              ) : summary ? (
+                <div className="space-y-4">
+                  <div className="p-4 bg-purple-50 border border-purple-200 rounded-md">
+                    <p className="text-sm text-purple-900 whitespace-pre-wrap">{summary}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopy}
+                    className="w-full bg-transparent border-purple-200 hover:bg-purple-50"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-4 h-4 mr-2" />
+                        コピー済み
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4 mr-2" />
+                        要約をコピー
+                      </>
+                    )}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center space-y-2">
+                    <Sparkles className="w-8 h-8 mx-auto text-gray-300" />
+                    <p className="text-sm text-gray-500">メモを入力して「Claude AIで要約」ボタンを押してください</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 使用例 */}
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Plus className="w-5 h-5" />
-              新しいメモを作成
-            </CardTitle>
+            <CardTitle>使用例</CardTitle>
+            <CardDescription>以下のようなメモの要約に活用できます</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <Input placeholder="メモのタイトル" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
-            <Textarea
-              placeholder="メモの内容を入力してください..."
-              value={newContent}
-              onChange={(e) => setNewContent(e.target.value)}
-              rows={4}
-            />
-            <Button
-              onClick={handleSummarize}
-              disabled={isSummarizing || !newContent.trim()}
-              variant="outline"
-              className="w-full"
-            >
-              {isSummarizing ? "要約中です..." : "✨ AIで内容を要約する"}
-            </Button>
-            <Button onClick={addMemo} className="w-full">
-              <Plus className="w-4 h-4 mr-2" />
-              メモを追加
-            </Button>
+          <CardContent>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="p-3 bg-gray-50 rounded-md">
+                <h4 className="font-medium text-sm mb-1">会議メモ</h4>
+                <p className="text-xs text-gray-600">長い会議の内容を要点にまとめます</p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-md">
+                <h4 className="font-medium text-sm mb-1">学習ノート</h4>
+                <p className="text-xs text-gray-600">勉強した内容の重要ポイントを抽出</p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-md">
+                <h4 className="font-medium text-sm mb-1">アイデアメモ</h4>
+                <p className="text-xs text-gray-600">散らばったアイデアを整理して要約</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
-        {/* 検索とフィルター */}
-        <div className="mb-6 space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <Input
-              placeholder="メモを検索..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-
-          <Button
-            onClick={handleSummarizeAll}
-            disabled={isSummarizingAll || memos.length === 0}
-            variant="secondary"
-            className="w-full"
-          >
-            {isSummarizingAll ? "要約中です..." : `📚 すべてのメモ (${memos.length}件) を要約する`}
-          </Button>
-
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="all">すべて ({memos.length})</TabsTrigger>
-              <TabsTrigger value="favorites">
-                <Star className="w-4 h-4 mr-1" />
-                お気に入り ({favoriteCount})
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
-
-        {/* メモ一覧 */}
-        <div className="space-y-4">
-          {sortedMemos.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-12">
-                <div className="text-gray-400 mb-2">{activeTab === "favorites" ? "⭐" : "📝"}</div>
-                <p className="text-gray-500">
-                  {activeTab === "favorites"
-                    ? "お気に入りのメモがありません"
-                    : searchQuery
-                      ? "検索結果が見つかりません"
-                      : "メモがありません。最初のメモを作成してみましょう！"}
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            sortedMemos.map((memo) => (
-              <Card key={memo.id} className="hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        {memo.title}
-                        {memo.favorite && (
-                          <Badge variant="secondary" className="text-yellow-600">
-                            <Star className="w-3 h-3 mr-1 fill-current" />
-                            お気に入り
-                          </Badge>
-                        )}
-                      </CardTitle>
-                      <p className="text-sm text-gray-500 mt-1">
-                        作成: {memo.createdAt.toLocaleDateString("ja-JP")}{" "}
-                        {memo.createdAt.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
-                        {memo.updatedAt.getTime() !== memo.createdAt.getTime() && (
-                          <span className="ml-2">
-                            更新: {memo.updatedAt.toLocaleDateString("ja-JP")}{" "}
-                            {memo.updatedAt.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleFavorite(memo.id)}
-                        className={
-                          memo.favorite
-                            ? "text-yellow-600 hover:text-yellow-700"
-                            : "text-gray-400 hover:text-yellow-600"
-                        }
-                      >
-                        <Star className={`w-4 h-4 ${memo.favorite ? "fill-current" : ""}`} />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteMemo(memo.id)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-gray-700 whitespace-pre-wrap">{memo.content}</p>
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </div>
+        {/* Claude AI情報 */}
+        <Card className="bg-purple-50">
+          <CardHeader>
+            <CardTitle className="text-purple-800">Claude AIについて</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-purple-800">
+              このアプリケーションはAnthropicのClaude AIを使用しています。Claude AIは高度な言語理解と生成能力を持ち、
+              自然な日本語での要約を提供します。Claude 3 Haikuモデルは効率的で高速な応答が特徴です。
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
